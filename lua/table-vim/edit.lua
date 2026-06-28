@@ -86,7 +86,8 @@ function M.open(buf, start_insert)
     border = 'none',
   })
   st.edit.ewin = ewin
-  vim.wo[ewin].winhighlight = 'Normal:' .. opts.highlights.edit
+  -- use the fixed group name (highlights.edit holds an appearance spec, not a name)
+  vim.wo[ewin].winhighlight = 'Normal:' .. require('table-vim.config').GROUPS.edit
   vim.wo[ewin].wrap = false
   show_cursor(st)
 
