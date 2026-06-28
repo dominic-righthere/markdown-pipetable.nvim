@@ -1,0 +1,6 @@
+# swap / undo / backup
+*.swp
+*.swo
+*~
+# ctags
+tags
