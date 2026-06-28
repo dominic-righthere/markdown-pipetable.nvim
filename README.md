@@ -1,5 +1,7 @@
 # table-vim
 
+[![CI](https://github.com/dominic-righthere/table-vim.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/dominic-righthere/table-vim.nvim/actions/workflows/ci.yml)
+
 Interactive, fit-to-width markdown tables for Neovim, rendered inline in your buffer.
 
 ![table-vim demo](assets/demo.svg)
