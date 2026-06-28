@@ -4,3 +4,5 @@
 *~
 # ctags
 tags
+# generated helptags (plugin managers rebuild these)
+doc/tags

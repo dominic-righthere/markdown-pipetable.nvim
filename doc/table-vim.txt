@@ -1,0 +1,270 @@
+*table-vim.txt*        Interactive, fit-to-width inline markdown tables
+
+Author:  Dominic Lee <https://github.com/dominic-righthere>
+License: MIT
+
+==============================================================================
+CONTENTS                                                    *table-vim-contents*
+
+  1. Introduction ............................ |table-vim-introduction|
+  2. Requirements ............................ |table-vim-requirements|
+  3. Setup ................................... |table-vim-setup|
+  4. Modes ................................... |table-vim-modes|
+  5. Keymaps ................................. |table-vim-keymaps|
+  6. Row & column operations ................. |table-vim-operations|
+  7. Selection ............................... |table-vim-selection|
+  8. Configuration ........................... |table-vim-config|
+  9. Highlights .............................. |table-vim-highlights|
+ 10. Commands & <Plug> ....................... |table-vim-commands|
+ 11. Conflicts & rebinding ................... |table-vim-conflicts|
+ 12. render-markdown.nvim .................... |table-vim-render-markdown|
+ 13. API ..................................... |table-vim-api|
+
+==============================================================================
+1. INTRODUCTION                                         *table-vim-introduction*
+
+table-vim renders the markdown pipe-tables in a buffer to fit the window, then
+lets you move around them cell by cell, scroll sideways, and edit them like a
+small spreadsheet. The file on disk stays plain GitHub-flavored markdown the
+whole time: the raw `| ... |` text is the source of truth and the rendered view
+is painted over it with extmarks.
+
+It is standalone and does not depend on (or belong to) render-markdown.nvim or
+any other renderer.
+
+Features:
+  - Tables boxed and sized to the window; overflow is truncated (not wrapped)
+    with horizontal scroll (`<` / `>` markers).
+  - Vim-style modes active only while the cursor is in a table.
+  - Insert / delete / move / duplicate rows and columns, set alignment, sort.
+  - Visual selection of cells / rows / columns with yank, paste, clear.
+  - Configurable buffer-local keymaps, highlights, commands and <Plug> maps.
+  - CJK / double-width and escaped-pipe (`\|`) aware.
+
+==============================================================================
+2. REQUIREMENTS                                         *table-vim-requirements*
+
+  - Neovim 0.10 or newer (0.11 recommended).
+  - No other dependencies. Table detection uses a regex scanner; the treesitter
+    `markdown` parser is only a fallback. See `:checkhealth table-vim`.
+
+==============================================================================
+3. SETUP                                                       *table-vim-setup*
+
+Call setup() once. With lazy.nvim: >lua
+
+    {
+      'dominic-righthere/table-vim.nvim',
+      ft = 'markdown',
+      config = function()
+        require('table-vim').setup({})
+      end,
+    }
+<
+setup() accepts a table of options; see |table-vim-config| for the full list of
+defaults.
+
+==============================================================================
+4. MODES                                                       *table-vim-modes*
+
+While the cursor is in a table, table-vim is modal:
+
+  table-navigate    Move between cells, scroll horizontally. Entered
+                    automatically when the cursor lands on a table (see
+                    `auto_enter`), or via |:TableVim|.
+  in-cell           A small editor opens on the cell; its normal mode moves
+                    within the cell text.
+  in-cell-edit      The editor's insert mode; type to change the cell.
+  table-visual      Cell / row / column selection (see |table-vim-selection|).
+
+The focused cell is shown reverse-video; the active row is tinted. A mode badge
+is shown right-aligned on the active row, and |table-vim.status()| is available
+for statuslines.
+
+==============================================================================
+5. KEYMAPS                                                   *table-vim-keymaps*
+
+In table-navigate (defaults, all configurable, buffer-local):
+
+  h j k l / arrows   move cell left / down / up / right
+  _  0  ^            first column
+  $                  last column
+  gg / G             first / last row
+  <CR>               enter the cell (in-cell)
+  i / a              edit the cell (in-cell-edit)
+  u / <C-r>          undo / redo
+  <Esc> / q          leave table mode
+
+Pressing k/j off the top or bottom edge leaves the table in that direction.
+
+==============================================================================
+6. ROW & COLUMN OPERATIONS                               *table-vim-operations*
+
+Direct keys in table-navigate:
+
+  o / O              insert row below / above
+  dd                 delete the current row
+  yy                 yank the current row
+  p / P              paste below / above (right / left for a column register)
+
+Leader group, prefix `<leader>t` by default (see `keys.leader`), only mapped
+while in a table:
+
+  <leader>tir / tiR  insert row below / above
+  <leader>tic / tiC  insert column right / left
+  <leader>tdr / tdc  delete row / column
+  <leader>tmj / tmk  move row down / up
+  <leader>tmh / tml  move column left / right
+  <leader>tcr / tcc  duplicate row / column
+  <leader>tal tac tar tad   align left / center / right / default
+  <leader>ts / tS    sort by column ascending / descending
+
+Every operation rewrites the table in a single edit, so |u| / |CTRL-R| undo and
+redo it atomically.
+
+==============================================================================
+7. SELECTION                                               *table-vim-selection*
+
+From table-navigate: `v` starts a cell-block selection, `V` selects whole rows,
+`<C-v>` selects whole columns. Extend with h/j/k/l (and gg/G/_/$); v/V/<C-v>
+switch the kind. Then:
+
+  d        delete (rows drop rows, columns drop columns, a cell block clears)
+  y        yank the selection (also to the system clipboard as TSV)
+  x / c    clear the contents of the selected cells
+  <Esc>/q  cancel back to table-navigate
+
+==============================================================================
+8. CONFIGURATION                                              *table-vim-config*
+
+Defaults: >lua
+
+    require('table-vim').setup({
+      enabled = true,
+      auto_enter = true,        -- enter table-navigate on a table
+      filetypes = { 'markdown' },
+      debounce = 16,            -- ms to coalesce repaints
+      format_on_edit = false,   -- repad the whole table source on commit
+      clipboard = true,         -- mirror yanks to "+ as TSV
+      column = { min_width = 3, max_width = 40, padding = 1 },
+      border = { enabled = true, style = 'full' }, -- 'full'|'rows'|'none'
+      overflow = { left = '<', right = '>', ellipsis = '…', min_visible = 3 },
+      cursor = {
+        hide_real = true,
+        row_highlight = true,
+        column_highlight = false,
+      },
+      keys = {
+        enter = false,          -- optional normal-mode enter key
+        leader = '<leader>t',   -- prefix for keys.ops
+        nav = { ... }, ops = { ... }, visual = { ... },
+      },
+      highlights = { ... },     -- see |table-vim-highlights|
+    })
+<
+Every key binding accepts a string, a list of strings, or `false` to disable.
+Setting `keys.ops = false` drops the whole leader group.
+
+==============================================================================
+9. HIGHLIGHTS                                             *table-vim-highlights*
+
+Each rendered piece is tagged with a fixed group; configure its look through
+`highlights`. A value is either a group to link to (a string) or an
+|nvim_set_hl()| spec (a table). A value you set fully replaces the default;
+`false` leaves a group alone. Groups are re-applied on |:colorscheme|.
+
+  Key            Group                  Default
+  border         TableVimBorder         Comment
+  header         TableVimHeader         Title
+  cell           TableVimCell           Normal
+  cursor_cell    TableVimCursorCell     { reverse = true, bold = true }
+  cursor_row     TableVimCursorRow      CursorLine
+  cursor_col     TableVimCursorColumn   CursorColumn
+  selection      TableVimSelection      Visual
+  overflow       TableVimOverflow       NonText
+  edit           TableVimEdit           IncSearch
+  hidden_cursor  TableVimHiddenCursor   { blend = 100 }
+
+Example: >lua
+
+    highlights = {
+      cursor_cell = { bg = '#7aa2f7', fg = '#1a1b26', bold = true },
+      cursor_row  = 'Visual',
+      border      = false,
+    }
+<
+==============================================================================
+10. COMMANDS & <Plug>                                      *table-vim-commands*
+
+                                                                     *:TableVim*
+:TableVim            Toggle table mode on the current buffer.
+
+The operations are also commands (these work outside table mode too; they act
+on the table under the cursor):
+
+  :TableInsertRow[!]            (! = above)
+  :TableDeleteRow
+  :TableInsertColumn[!]         (! = left)
+  :TableDeleteColumn
+  :TableMoveRow up|down
+  :TableMoveColumn left|right
+  :TableAlign left|center|right|default
+  :TableSort[!]                 (! = descending)
+  :TableYank
+  :TablePaste[!]                (! = above/left)
+
+                                                                  *table-vim-plug*
+Every operation also has a <Plug> mapping, e.g.: >lua
+
+    vim.keymap.set('n', '<leader>ic', '<Plug>(table-vim-insert-col-right)')
+<
+Names: insert-row-below, insert-row-above, insert-col-right, insert-col-left,
+delete-row, delete-col, move-row-up, move-row-down, move-col-left,
+move-col-right, dup-row, dup-col, align-left, align-center, align-right,
+align-default, sort-asc, sort-desc, yank-row, paste-below, paste-above.
+
+==============================================================================
+11. CONFLICTS & REBINDING                                  *table-vim-conflicts*
+
+Every navigate / visual / operation key is buffer-local and installed only
+while the cursor is in a table; your prior mappings are saved and restored on
+exit. Nothing is mapped outside a table, so there is no permanent or global
+conflict. The leader group only shadows your own `<leader>t...` while you are
+actually in a table.
+
+To change or drop the defaults:
+  - `keys.leader = '<localleader>t'` moves the whole operation group.
+  - `keys.ops = false` drops the leader group; any binding `= false` is skipped.
+  - Or use the <Plug> maps / |:TableVim| commands and bind your own keys.
+
+==============================================================================
+12. render-markdown.nvim                              *table-vim-render-markdown*
+
+If you also use render-markdown.nvim, both render markdown tables by default and
+will draw over each other. Let render-markdown handle headings/code/lists and
+table-vim own tables: >lua
+
+    require('render-markdown').setup({
+      pipe_table = { enabled = false },
+      win_options = { concealcursor = { rendered = 'nvic' } },
+    })
+<
+==============================================================================
+13. API                                                         *table-vim-api*
+
+table-vim.setup({opts})                                    *table-vim.setup()*
+        Configure and enable the plugin.
+
+table-vim.toggle()                                        *table-vim.toggle()*
+        Toggle table mode on the current buffer (same as |:TableVim|).
+
+table-vim.status()                                        *table-vim.status()*
+        Returns a statusline string like `TBL NAV 2:3`, or "" when not in a
+        table. Example: >lua
+
+            vim.o.statusline = "%{%v:lua.require'table-vim'.status()%}"
+<
+table-vim.mode()                                            *table-vim.mode()*
+        Returns the current table mode ('inactive' when not in a table).
+
+ vim:tw=78:ts=8:et:ft=help:norl:
