@@ -17,7 +17,7 @@ CONTENTS                                                    *pipetable-contents*
   9. Highlights .............................. |pipetable-highlights|
  10. Commands & <Plug> ....................... |pipetable-commands|
  11. Conflicts & rebinding ................... |pipetable-conflicts|
- 12. render-markdown.nvim .................... |pipetable-render-markdown|
+ 12. Other markdown renderers ................ |pipetable-renderers|
  13. API ..................................... |pipetable-api|
 
 ==============================================================================
@@ -248,17 +248,38 @@ To change or drop the defaults:
   - Or use the <Plug> maps / |:Pipetable| commands and bind your own keys.
 
 ==============================================================================
-12. render-markdown.nvim                              *pipetable-render-markdown*
+12. Other markdown renderers                              *pipetable-renderers*
 
-If you also use render-markdown.nvim, both render markdown tables by default and
-will draw over each other. Let render-markdown handle headings/code/lists and
-pipetable own tables: >lua
+pipetable renders tables itself, so any plugin that also renders markdown tables
+will draw over it. The rule is the same whichever you use: let the other plugin
+keep headings/code/lists, and let pipetable own tables.
+
+render-markdown.nvim                                  *pipetable-render-markdown*
+
+Both also touch 'conceallevel' and 'concealcursor', so turn off its table
+rendering and stop it fighting over 'concealcursor': >lua
 
     require('render-markdown').setup({
       pipe_table = { enabled = false },
       win_options = { concealcursor = { rendered = 'nvic' } },
     })
 <
+markview.nvim                                                *pipetable-markview*
+
+markview draws its table border on the lines either side of the table, which
+pipetable doesn't touch, so you get its border wrapped around pipetable's. Turn
+off its table module: >lua
+
+    require('markview').setup({
+      markdown = {
+        tables = { enable = false },
+      },
+    })
+<
+Everything else keeps rendering as configured. Unlike render-markdown, no
+'concealcursor' adjustment is needed: markview only sets it when its windows
+aren't already attached, and pipetable's value wins in the usual case.
+
 ==============================================================================
 13. API                                                         *pipetable-api*
 

@@ -255,13 +255,17 @@ If you want to change or drop the defaults:
 - Or turn the keymaps off and bind the `<Plug>` mappings (or use the `:Table*`
   commands) however you like.
 
-## Using it with render-markdown.nvim
+## Using it with another markdown renderer
 
-Out of the box both plugins render markdown tables, so they'll draw on top of each
-other and you get doubled, garbled boxes. They also both touch the `conceallevel`
-and `concealcursor` window options. The fix is to let render-markdown handle
-headings, code, and lists, and let pipetable own tables. Turn off its table
-rendering and stop it from fighting over `concealcursor`:
+pipetable renders tables itself, so any plugin that also renders markdown tables
+will draw on top of it and you get doubled, garbled boxes. The rule is the same
+whichever one you use: let the other plugin keep headings, code, and lists, and
+let pipetable own tables.
+
+### render-markdown.nvim
+
+Both plugins also touch the `conceallevel` and `concealcursor` window options, so
+turn off its table rendering and stop it fighting over `concealcursor`:
 
 ```lua
 require('render-markdown').setup({
@@ -273,6 +277,27 @@ require('render-markdown').setup({
 
 After that, headings keep render-markdown's styling and tables become interactive
 through pipetable.
+
+### markview.nvim
+
+markview draws its table border on the lines either side of the table, which
+pipetable doesn't touch — so you get markview's border wrapped around pipetable's,
+at a slightly different width. For a table indented inside a list item, that border
+lands inline and mangles the text. Turn off its table module:
+
+```lua
+require('markview').setup({
+  -- ...your existing opts...
+  markdown = {
+    tables = { enable = false }, -- pipetable owns tables
+  },
+})
+```
+
+Everything else (headings, list item markers, and so on) keeps rendering exactly as
+you configured it. Unlike render-markdown, markview doesn't need a `concealcursor`
+adjustment: it only sets that option when its windows aren't already attached, and
+pipetable's own value wins in the usual case.
 
 ## Known limitations
 
