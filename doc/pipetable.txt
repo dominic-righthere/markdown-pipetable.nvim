@@ -277,8 +277,10 @@ off its table module: >lua
     })
 <
 Everything else keeps rendering as configured. Unlike render-markdown, no
-'concealcursor' adjustment is needed: markview only sets it when its windows
-aren't already attached, and pipetable's value wins in the usual case.
+'concealcursor' adjustment is needed. markview does update 'conceallevel' and
+'concealcursor' as its preview/mode state changes; pipetable tracks those writes
+and hands the latest values back when it stops rendering. Its table module still
+has to stay off because option coordination cannot prevent doubled table extmarks.
 
 ==============================================================================
 13. API                                                         *pipetable-api*

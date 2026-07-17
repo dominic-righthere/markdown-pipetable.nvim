@@ -295,9 +295,11 @@ require('markview').setup({
 ```
 
 Everything else (headings, list item markers, and so on) keeps rendering exactly as
-you configured it. Unlike render-markdown, markview doesn't need a `concealcursor`
-adjustment: it only sets that option when its windows aren't already attached, and
-pipetable's own value wins in the usual case.
+you configured it. markview also updates `conceallevel` and `concealcursor` as its
+preview and mode state changes. pipetable tracks those writes and hands the latest
+values back when it stops rendering instead of restoring stale settings. Its table
+module still has to stay off because option coordination cannot prevent doubled
+table extmarks.
 
 ## Known limitations
 

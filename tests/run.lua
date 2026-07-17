@@ -151,6 +151,99 @@ do
   eq('plan scrolled has_left', tostring(layout.plan(t, 30, 1, opts).has_left), 'true')
 end
 
+-- ---------------------------------------------------------------- window option ownership
+section('window option ownership')
+do
+  local function table_buf()
+    return mkbuf({ '| A | B |', '|---|---|', '| 1 | 2 |' })
+  end
+  local function set_wo(win, level, cursor, wrap)
+    vim.wo[win].conceallevel = level
+    vim.wo[win].concealcursor = cursor
+    vim.wo[win].wrap = wrap
+  end
+  local function eq_wo(prefix, win, level, cursor, wrap)
+    eq(prefix .. ' conceallevel', vim.wo[win].conceallevel, level)
+    eq(prefix .. ' concealcursor', vim.wo[win].concealcursor, cursor)
+    eq(prefix .. ' wrap', tostring(vim.wo[win].wrap), tostring(wrap))
+  end
+
+  -- An untouched claim returns the exact values that preceded pipetable.
+  local b = table_buf()
+  vim.api.nvim_set_current_buf(b)
+  local win = vim.api.nvim_get_current_win()
+  set_wo(win, 0, 'nc', true)
+  manager.refresh(b)
+  eq_wo('options applied', win, 2, '', false)
+  manager.restore_wo(b)
+  eq_wo('originals restored', win, 0, 'nc', true)
+
+  -- Changing pipetable's own desired value must not replace the hand-back value.
+  set_wo(win, 0, 'nc', true)
+  manager.refresh(b)
+  state.get(b).mode = 'table-navigate'
+  manager.refresh(b)
+  eq('active concealcursor applied', vim.wo[win].concealcursor, 'nvic')
+  manager.restore_wo(b)
+  eq_wo('mode change preserves originals', win, 0, 'nc', true)
+  state.get(b).mode = 'inactive'
+
+  -- Later writers win, even when they change away and back to the value that
+  -- pipetable last wrote (the case compare-and-restore alone cannot detect).
+  set_wo(win, 0, 'nc', true)
+  manager.refresh(b)
+  set_wo(win, 3, 'v', true)
+  vim.wo[win].conceallevel = 2
+  manager.restore_wo(b)
+  eq_wo('external values preserved', win, 2, 'v', true)
+
+  -- If pipetable refreshes after an external write, it may temporarily reclaim
+  -- the options but must hand the latest external values back on release.
+  set_wo(win, 0, 'nc', true)
+  manager.refresh(b)
+  set_wo(win, 3, 'v', true)
+  manager.refresh(b)
+  eq_wo('options reclaimed', win, 2, '', false)
+  manager.restore_wo(b)
+  eq_wo('latest values handed back', win, 3, 'v', true)
+
+  -- Removing the last table releases every claimed option immediately.
+  set_wo(win, 1, 'c', true)
+  manager.refresh(b)
+  vim.api.nvim_buf_set_lines(b, 0, -1, false, { '# no tables' })
+  state.get(b).dirty = true
+  manager.refresh(b)
+  eq_wo('no-table release', win, 1, 'c', true)
+
+  -- Each split keeps its own baseline. Reusing one window for another buffer
+  -- restores only that window, even while the table remains visible elsewhere.
+  local split_buf = table_buf()
+  vim.api.nvim_set_current_buf(split_buf)
+  local win1 = vim.api.nvim_get_current_win()
+  set_wo(win1, 0, 'nc', true)
+  manager.refresh(split_buf)
+
+  vim.cmd('vnew')
+  local win2 = vim.api.nvim_get_current_win()
+  local other = vim.api.nvim_get_current_buf()
+  vim.bo[other].buftype = 'nofile'
+  set_wo(win2, 1, 'v', true)
+  vim.api.nvim_win_set_buf(win2, split_buf)
+  manager.refresh(split_buf)
+  eq_wo('second window applied', win2, 2, '', false)
+  vim.api.nvim_win_set_buf(win2, other)
+  eq_wo('reused window restored', win2, 1, 'v', true)
+  eq_wo('first window still owned', win1, 2, '', false)
+
+  -- Closing an owned split discards only its dead-window record.
+  vim.api.nvim_win_set_buf(win2, split_buf)
+  manager.refresh(split_buf)
+  vim.api.nvim_set_current_win(win1)
+  vim.api.nvim_win_close(win2, true)
+  ok('restore after owned window closes', pcall(manager.restore_wo, split_buf))
+  eq_wo('remaining window restored', win1, 0, 'nc', true)
+end
+
 -- ---------------------------------------------------------------- selection.range
 section('selection.range')
 do

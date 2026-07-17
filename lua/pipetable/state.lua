@@ -18,7 +18,6 @@ function M.get(buf)
       internal_move = false, -- set when WE move the cursor, so on_cursor ignores the event
       saved = {
         maps = {}, -- per-mode saved keymaps
-        wo = {}, -- saved window options
         guicursor = nil,
         modifiable = nil,
       },

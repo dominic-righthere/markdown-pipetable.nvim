@@ -8,6 +8,43 @@ local M = {}
 
 local augroup = vim.api.nvim_create_augroup('pipetable', { clear = true })
 
+-- Window options are shared territory. Keep ownership by window (not buffer),
+-- remember the latest value written by somebody else, and only hand a value
+-- back when ours is still the current value.
+local WO_NAMES = { 'conceallevel', 'concealcursor', 'wrap' }
+local wo_owners = {} ---@type table<integer, { buf: integer, options: table<string, { restore: any, applied: any }> }>
+local wo_writing = {} ---@type table<integer, string>
+
+---@param win integer
+---@param name string
+---@param value any
+local function write_wo(win, name, value)
+  wo_writing[win] = name
+  vim.wo[win][name] = value
+  wo_writing[win] = nil
+end
+
+---@param win integer
+local function restore_win_wo(win)
+  local owner = wo_owners[win]
+  if not owner then
+    return
+  end
+  -- Drop ownership first so our hand-back writes are not mistaken for a new
+  -- external owner by the OptionSet observer.
+  wo_owners[win] = nil
+  wo_writing[win] = nil
+  if not vim.api.nvim_win_is_valid(win) then
+    return
+  end
+  for _, name in ipairs(WO_NAMES) do
+    local option = owner.options[name]
+    if option and vim.wo[win][name] == option.applied then
+      write_wo(win, name, option.restore)
+    end
+  end
+end
+
 ---@param win integer
 ---@return integer
 function M.usable_width(win)
@@ -31,39 +68,53 @@ function M.win_for(buf)
   return nil
 end
 
----Apply our window options, capturing the user's originals once for restore.
+---Apply our window options, capturing the latest external values for restore.
 ---concealcursor depends on mode: rendered-through-cursor in table modes, raw in inactive.
 ---@param buf integer
 ---@param win integer
 local function apply_wo(buf, win)
   local st = state.get(buf)
-  if not st.saved.wo.captured then
-    st.saved.wo = {
-      captured = true,
-      conceallevel = vim.wo[win].conceallevel,
-      concealcursor = vim.wo[win].concealcursor,
-      wrap = vim.wo[win].wrap,
-    }
+  local desired = {
+    conceallevel = 2,
+    concealcursor = (st.mode ~= 'inactive') and 'nvic' or '',
+    wrap = false,
+  }
+  local owner = wo_owners[win]
+  if owner and owner.buf ~= buf then
+    restore_win_wo(win)
+    owner = nil
   end
-  vim.wo[win].conceallevel = 2
-  vim.wo[win].concealcursor = (st.mode ~= 'inactive') and 'nvic' or ''
-  vim.wo[win].wrap = false
+  if not owner then
+    owner = { buf = buf, options = {} }
+    wo_owners[win] = owner
+  end
+  for _, name in ipairs(WO_NAMES) do
+    local current = vim.wo[win][name]
+    local option = owner.options[name]
+    if not option then
+      option = { restore = current, applied = current }
+      owner.options[name] = option
+    elseif current ~= option.applied then
+      -- Fallback for writes made with :noautocmd or before OptionSet is live.
+      option.restore = current
+    end
+    option.applied = desired[name]
+    write_wo(win, name, option.applied)
+  end
 end
 
----Restore the user's original window options.
+---Release every window currently owned for a buffer.
 ---@param buf integer
 function M.restore_wo(buf)
-  local st = state.peek(buf)
-  if not st or not st.saved.wo.captured then
-    return
+  local wins = {}
+  for win, owner in pairs(wo_owners) do
+    if owner.buf == buf then
+      wins[#wins + 1] = win
+    end
   end
-  local win = M.win_for(buf)
-  if win then
-    vim.wo[win].conceallevel = st.saved.wo.conceallevel
-    vim.wo[win].concealcursor = st.saved.wo.concealcursor
-    vim.wo[win].wrap = st.saved.wo.wrap
+  for _, win in ipairs(wins) do
+    restore_win_wo(win)
   end
-  st.saved.wo.captured = false
 end
 
 ---@param buf integer
@@ -307,6 +358,49 @@ end
 
 function M.init()
   local opts = config.get()
+
+  vim.api.nvim_create_autocmd('OptionSet', {
+    group = augroup,
+    pattern = WO_NAMES,
+    callback = function(ev)
+      local win = vim.api.nvim_get_current_win()
+      local owner = wo_owners[win]
+      local name = ev.match
+      if owner and owner.buf == vim.api.nvim_win_get_buf(win) and wo_writing[win] ~= name then
+        local option = owner.options[name]
+        if option then
+          -- Reading the option is more reliable than v:option_new across the
+          -- number/string/boolean option types supported by Neovim 0.10+.
+          option.restore = vim.wo[win][name]
+        end
+      end
+    end,
+  })
+
+  -- BufWinLeave is not emitted for one split if the same buffer remains visible
+  -- elsewhere. BufEnter lets us release ownership when that particular window
+  -- is reused for another buffer.
+  vim.api.nvim_create_autocmd('BufEnter', {
+    group = augroup,
+    callback = function(ev)
+      local win = vim.api.nvim_get_current_win()
+      local owner = wo_owners[win]
+      if owner and owner.buf ~= ev.buf then
+        restore_win_wo(win)
+      end
+    end,
+  })
+
+  vim.api.nvim_create_autocmd('WinClosed', {
+    group = augroup,
+    callback = function(ev)
+      local win = tonumber(ev.match)
+      if win then
+        wo_owners[win] = nil
+        wo_writing[win] = nil
+      end
+    end,
+  })
 
   vim.api.nvim_create_autocmd('FileType', {
     group = augroup,
